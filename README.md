@@ -1,3 +1,744 @@
+{
+  "targets": [
+    {
+      "target_name": "addon",
+      "sources": [ "addon.cc" ]
+    }
+  ]
+} COPY
+In cases where there is more than one .cc file, simply add the additional filename to the sources array:
+
+"sources": ["addon.cc", "myexample.cc"] COPY
+Once the binding.gyp file is ready, the example addons can be configured and built using node-gyp:
+
+node-gyp configure build // addon.cc
+#include <node.h>
+
+namespace demo {
+
+using v8::Exception;
+using v8::FunctionCallbackInfo;
+using v8::Isolate;
+using v8::Local;
+using v8::Number;
+using v8::Object;
+using v8::String;
+using v8::Value;
+
+// This is the implementation of the "add" method
+// Input arguments are passed using the
+// const FunctionCallbackInfo<Value>& args struct
+void Add(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+
+  // Check the number of arguments passed.
+  if (args.Length() < 2) {
+    // Throw an Error that is passed back to JavaScript
+    isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate,
+                            "Wrong number of arguments").ToLocalChecked()));
+    return;
+  }
+
+  // Check the argument types
+  if (!args[0]->IsNumber() || !args[1]->IsNumber()) {
+    isolate->ThrowException(Exception::TypeError(
+        String::NewFromUtf8(isolate,
+                            "Wrong arguments").ToLocalChecked()));
+    return;
+  }
+
+  // Perform the operation
+  double value =
+      args[0].As<Number>()->Value() + args[1].As<Number>()->Value();
+  Local<Number> num = Number::New(isolate, value);
+
+  // Set the return value (using the passed in
+  // FunctionCallbackInfo<Value>&)
+  args.GetReturnValue().Set(num);
+}
+
+void Init(Local<Object> exports) {
+  NODE_SET_METHOD(exports, "add", Add);
+}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
+
+}  // namespace demo COPY
+Once compiled, the example addon can be required and used from within Node.js:
+
+// test.js
+const addon = require('./build/Release/addon');
+
+console.log('This should be eight:', addon.add(3, 5)); COPY
+Callbacks#
+
+It is common practice within addons to pass JavaScript functions to a C++ function and execute them from there. The following example illustrates how to invoke such callbacks:
+
+// addon.cc
+#include <node.h>
+
+namespace demo {
+
+using v8::Context;
+using v8::Function;
+using v8::FunctionCallbackInfo;
+using v8::Isolate;
+using v8::Local;
+using v8::Null;
+using v8::Object;
+using v8::String;
+using v8::Value;
+
+void RunCallback(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Function> cb = Local<Function>::Cast(args[0]);
+  const unsigned argc = 1;
+  Local<Value> argv[argc] = {
+      String::NewFromUtf8(isolate,
+                          "hello world").ToLocalChecked() };
+  cb->Call(context, Null(isolate), argc, argv).ToLocalChecked();
+}
+
+void Init(Local<Object> exports, Local<Object> module) {
+  NODE_SET_METHOD(module, "exports", RunCallback);
+}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
+
+}  // namespace demo COPY
+This example uses a two-argument form of Init() that receives the full module object as the second argument. This allows the addon to completely overwrite exports with a single function instead of adding the function as a property of exports.
+
+To test it, run the following JavaScript:
+
+// test.js
+const addon = require('./build/Release/addon');
+
+addon((msg) => {
+  console.log(msg);
+// Prints: 'hello world'
+}); COPY
+In this example, the callback function is invoked synchronously.
+
+Object factory#
+
+Addons can create and return new objects from within a C++ function as illustrated in the following example. An object is created and returned with a property msg that echoes the string passed to createObject():
+
+// addon.cc
+#include <node.h>
+
+namespace demo {
+
+using v8::Context;
+using v8::FunctionCallbackInfo;
+using v8::Isolate;
+using v8::Local;
+using v8::Object;
+using v8::String;
+using v8::Value;
+
+void CreateObject(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  Local<Object> obj = Object::New(isolate);
+  obj->Set(context,
+           String::NewFromUtf8(isolate,
+                               "msg").ToLocalChecked(),
+                               args[0]->ToString(context).ToLocalChecked())
+           .FromJust();
+
+  args.GetReturnValue().Set(obj);
+}
+
+void Init(Local<Object> exports, Local<Object> module) {
+  NODE_SET_METHOD(module, "exports", CreateObject);
+}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
+
+}  // namespace demo COPY
+To test it in JavaScript:
+
+// test.js
+const addon = require('./build/Release/addon');
+
+const obj1 = addon('hello');
+const obj2 = addon('world');
+console.log(obj1.msg, obj2.msg);
+// Prints: 'hello world' COPY
+Function factory#
+
+Another common scenario is creating JavaScript functions that wrap C++ functions and returning those back to JavaScript:
+
+// addon.cc
+#include <node.h>
+
+namespace demo {
+
+using v8::Context;
+using v8::Function;
+using v8::FunctionCallbackInfo;
+using v8::FunctionTemplate;
+using v8::Isolate;
+using v8::Local;
+using v8::Object;
+using v8::String;
+using v8::Value;
+
+void MyFunction(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  args.GetReturnValue().Set(String::NewFromUtf8(
+      isolate, "hello world").ToLocalChecked());
+}
+
+void CreateFunction(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<FunctionTemplate> tpl = FunctionTemplate::New(isolate, MyFunction);
+  Local<Function> fn = tpl->GetFunction(context).ToLocalChecked();
+
+  // omit this to make it anonymous
+  fn->SetName(String::NewFromUtf8(
+      isolate, "theFunction").ToLocalChecked());
+
+  args.GetReturnValue().Set(fn);
+}
+
+void Init(Local<Object> exports, Local<Object> module) {
+  NODE_SET_METHOD(module, "exports", CreateFunction);
+}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, Init)
+
+}  // namespace demo COPY
+To test:
+
+// test.js
+const addon = require('./build/Release/addon');
+
+const fn = addon();
+console.log(fn());
+// Prints: 'hello world' COPY
+Wrapping C++ objects#
+
+It is also possible to wrap C++ objects/classes in a way that allows new instances to be created using the JavaScript new operator:
+
+// addon.cc
+#include <node.h>
+#include "myobject.h"
+
+namespace demo {
+
+using v8::Local;
+using v8::Object;
+
+void InitAll(Local<Object> exports) {
+  MyObject::Init(exports);
+}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, InitAll)
+
+}  // namespace demo COPY
+Then, in myobject.h, the wrapper class inherits from node::ObjectWrap:
+
+// myobject.h
+#ifndef MYOBJECT_H
+#define MYOBJECT_H
+
+#include <node.h>
+#include <node_object_wrap.h>
+
+namespace demo {
+
+class MyObject : public node::ObjectWrap {
+ public:
+  static void Init(v8::Local<v8::Object> exports);
+
+ private:
+  explicit MyObject(double value = 0);
+  ~MyObject();
+
+  static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void PlusOne(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  double value_;
+};
+
+}  // namespace demo
+
+#endif COPY
+In myobject.cc, implement the various methods that are to be exposed. Below, the method plusOne() is exposed by adding it to the constructor's prototype:
+
+// myobject.cc
+#include "myobject.h"
+
+namespace demo {
+
+using v8::Context;
+using v8::Function;
+using v8::FunctionCallbackInfo;
+using v8::FunctionTemplate;
+using v8::Isolate;
+using v8::Local;
+using v8::Number;
+using v8::Object;
+using v8::ObjectTemplate;
+using v8::String;
+using v8::Value;
+
+MyObject::MyObject(double value) : value_(value) {
+}
+
+MyObject::~MyObject() {
+}
+
+void MyObject::Init(Local<Object> exports) {
+  Isolate* isolate = exports->GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  Local<ObjectTemplate> addon_data_tpl = ObjectTemplate::New(isolate);
+  addon_data_tpl->SetInternalFieldCount(1);  // 1 field for the MyObject::New()
+  Local<Object> addon_data =
+      addon_data_tpl->NewInstance(context).ToLocalChecked();
+
+  // Prepare constructor template
+  Local<FunctionTemplate> tpl = FunctionTemplate::New(isolate, New, addon_data);
+  tpl->SetClassName(String::NewFromUtf8(isolate, "MyObject").ToLocalChecked());
+  tpl->InstanceTemplate()->SetInternalFieldCount(1);
+
+  // Prototype
+  NODE_SET_PROTOTYPE_METHOD(tpl, "plusOne", PlusOne);
+
+  Local<Function> constructor = tpl->GetFunction(context).ToLocalChecked();
+  addon_data->SetInternalField(0, constructor);
+  exports->Set(context, String::NewFromUtf8(
+      isolate, "MyObject").ToLocalChecked(),
+      constructor).FromJust();
+}
+
+void MyObject::New(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  if (args.IsConstructCall()) {
+    // Invoked as constructor: `new MyObject(...)`
+    double value = args[0]->IsUndefined() ?
+        0 : args[0]->NumberValue(context).FromMaybe(0);
+    MyObject* obj = new MyObject(value);
+    obj->Wrap(args.This());
+    args.GetReturnValue().Set(args.This());
+  } else {
+    // Invoked as plain function `MyObject(...)`, turn into construct call.
+    const int argc = 1;
+    Local<Value> argv[argc] = { args[0] };
+    Local<Function> cons =
+        args.Data().As<Object>()->GetInternalField(0)
+            .As<Value>().As<Function>();
+    Local<Object> result =
+        cons->NewInstance(context, argc, argv).ToLocalChecked();
+    args.GetReturnValue().Set(result);
+  }
+}
+
+void MyObject::PlusOne(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+
+  MyObject* obj = ObjectWrap::Unwrap<MyObject>(args.Holder());
+  obj->value_ += 1;
+
+  args.GetReturnValue().Set(Number::New(isolate, obj->value_));
+}
+
+}  // namespace demo COPY
+To build this example, the myobject.cc file must be added to the binding.gyp:
+
+{
+  "targets": [
+    {
+      "target_name": "addon",
+      "sources": [
+        "addon.cc",
+        "myobject.cc"
+      ]
+    }
+  ]
+} COPY
+Test it with:
+
+// test.js
+const addon = require('./build/Release/addon');
+
+const obj = new addon.MyObject(10);
+console.log(obj.plusOne());
+// Prints: 11
+console.log(obj.plusOne());
+// Prints: 12
+console.log(obj.plusOne());
+// Prints: 13 COPY
+The destructor for a wrapper object will run when the object is garbage-collected. For destructor testing, there are command-line flags that can be used to make it possible to force garbage collection. These flags are provided by the underlying V8 JavaScript engine. They are subject to change or removal at any time. They are not documented by Node.js or V8, and they should never be used outside of testing.
+
+During shutdown of the process or worker threads destructors are not called by the JS engine. Therefore it's the responsibility of the user to track these objects and ensure proper destruction to avoid resource leaks.
+
+Factory of wrapped objects#
+
+Alternatively, it is possible to use a factory pattern to avoid explicitly creating object instances using the JavaScript new operator:
+
+const obj = addon.createObject();
+// instead of:
+// const obj = new addon.Object(); COPY
+First, the createObject() method is implemented in addon.cc:
+
+// addon.cc
+#include <node.h>
+#include "myobject.h"
+
+namespace demo {
+
+using v8::FunctionCallbackInfo;
+using v8::Isolate;
+using v8::Local;
+using v8::Object;
+using v8::String;
+using v8::Value;
+
+void CreateObject(const FunctionCallbackInfo<Value>& args) {
+  MyObject::NewInstance(args);
+}
+
+void InitAll(Local<Object> exports, Local<Object> module) {
+  MyObject::Init(exports->GetIsolate());
+
+  NODE_SET_METHOD(module, "exports", CreateObject);
+}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, InitAll)
+
+}  // namespace demo COPY
+In myobject.h, the static method NewInstance() is added to handle instantiating the object. This method takes the place of using new in JavaScript:
+
+// myobject.h
+#ifndef MYOBJECT_H
+#define MYOBJECT_H
+
+#include <node.h>
+#include <node_object_wrap.h>
+
+namespace demo {
+
+class MyObject : public node::ObjectWrap {
+ public:
+  static void Init(v8::Isolate* isolate);
+  static void NewInstance(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+ private:
+  explicit MyObject(double value = 0);
+  ~MyObject();
+
+  static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void PlusOne(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static v8::Global<v8::Function> constructor;
+  double value_;
+};
+
+}  // namespace demo
+
+#endif COPY
+The implementation in myobject.cc is similar to the previous example:
+
+// myobject.cc
+#include <node.h>
+#include "myobject.h"
+
+namespace demo {
+
+using node::AddEnvironmentCleanupHook;
+using v8::Context;
+using v8::Function;
+using v8::FunctionCallbackInfo;
+using v8::FunctionTemplate;
+using v8::Global;
+using v8::Isolate;
+using v8::Local;
+using v8::Number;
+using v8::Object;
+using v8::String;
+using v8::Value;
+
+// Warning! This is not thread-safe, this addon cannot be used for worker
+// threads.
+Global<Function> MyObject::constructor;
+
+MyObject::MyObject(double value) : value_(value) {
+}
+
+MyObject::~MyObject() {
+}
+
+void MyObject::Init(Isolate* isolate) {
+  // Prepare constructor template
+  Local<FunctionTemplate> tpl = FunctionTemplate::New(isolate, New);
+  tpl->SetClassName(String::NewFromUtf8(isolate, "MyObject").ToLocalChecked());
+  tpl->InstanceTemplate()->SetInternalFieldCount(1);
+
+  // Prototype
+  NODE_SET_PROTOTYPE_METHOD(tpl, "plusOne", PlusOne);
+
+  Local<Context> context = isolate->GetCurrentContext();
+  constructor.Reset(isolate, tpl->GetFunction(context).ToLocalChecked());
+
+  AddEnvironmentCleanupHook(isolate, [](void*) {
+    constructor.Reset();
+  }, nullptr);
+}
+
+void MyObject::New(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  if (args.IsConstructCall()) {
+    // Invoked as constructor: `new MyObject(...)`
+    double value = args[0]->IsUndefined() ?
+        0 : args[0]->NumberValue(context).FromMaybe(0);
+    MyObject* obj = new MyObject(value);
+    obj->Wrap(args.This());
+    args.GetReturnValue().Set(args.This());
+  } else {
+    // Invoked as plain function `MyObject(...)`, turn into construct call.
+    const int argc = 1;
+    Local<Value> argv[argc] = { args[0] };
+    Local<Function> cons = Local<Function>::New(isolate, constructor);
+    Local<Object> instance =
+        cons->NewInstance(context, argc, argv).ToLocalChecked();
+    args.GetReturnValue().Set(instance);
+  }
+}
+
+void MyObject::NewInstance(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+
+  const unsigned argc = 1;
+  Local<Value> argv[argc] = { args[0] };
+  Local<Function> cons = Local<Function>::New(isolate, constructor);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> instance =
+      cons->NewInstance(context, argc, argv).ToLocalChecked();
+
+  args.GetReturnValue().Set(instance);
+}
+
+void MyObject::PlusOne(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+
+  MyObject* obj = ObjectWrap::Unwrap<MyObject>(args.Holder());
+  obj->value_ += 1;
+
+  args.GetReturnValue().Set(Number::New(isolate, obj->value_));
+}
+
+}  // namespace demo COPY
+Once again, to build this example, the myobject.cc file must be added to the binding.gyp:
+
+{
+  "targets": [
+    {
+      "target_name": "addon",
+      "sources": [
+        "addon.cc",
+        "myobject.cc"
+      ]
+    }
+  ]
+} COPY
+Test it with:
+
+// test.js
+const createObject = require('./build/Release/addon');
+
+const obj = createObject(10);
+console.log(obj.plusOne());
+// Prints: 11
+console.log(obj.plusOne());
+// Prints: 12
+console.log(obj.plusOne());
+// Prints: 13
+
+const obj2 = createObject(20);
+console.log(obj2.plusOne());
+// Prints: 21
+console.log(obj2.plusOne());
+// Prints: 22
+console.log(obj2.plusOne());
+// Prints: 23 COPY
+Passing wrapped objects around#
+
+In addition to wrapping and returning C++ objects, it is possible to pass wrapped objects around by unwrapping them with the Node.js helper function node::ObjectWrap::Unwrap. The following examples shows a function add() that can take two MyObject objects as input arguments:
+
+// addon.cc
+#include <node.h>
+#include <node_object_wrap.h>
+#include "myobject.h"
+
+namespace demo {
+
+using v8::Context;
+using v8::FunctionCallbackInfo;
+using v8::Isolate;
+using v8::Local;
+using v8::Number;
+using v8::Object;
+using v8::String;
+using v8::Value;
+
+void CreateObject(const FunctionCallbackInfo<Value>& args) {
+  MyObject::NewInstance(args);
+}
+
+void Add(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  MyObject* obj1 = node::ObjectWrap::Unwrap<MyObject>(
+      args[0]->ToObject(context).ToLocalChecked());
+  MyObject* obj2 = node::ObjectWrap::Unwrap<MyObject>(
+      args[1]->ToObject(context).ToLocalChecked());
+
+  double sum = obj1->value() + obj2->value();
+  args.GetReturnValue().Set(Number::New(isolate, sum));
+}
+
+void InitAll(Local<Object> exports) {
+  MyObject::Init(exports->GetIsolate());
+
+  NODE_SET_METHOD(exports, "createObject", CreateObject);
+  NODE_SET_METHOD(exports, "add", Add);
+}
+
+NODE_MODULE(NODE_GYP_MODULE_NAME, InitAll)
+
+}  // namespace demo COPY
+In myobject.h, a new public method is added to allow access to private values after unwrapping the object.
+
+// myobject.h
+#ifndef MYOBJECT_H
+#define MYOBJECT_H
+
+#include <node.h>
+#include <node_object_wrap.h>
+
+namespace demo {
+
+class MyObject : public node::ObjectWrap {
+ public:
+  static void Init(v8::Isolate* isolate);
+  static void NewInstance(const v8::FunctionCallbackInfo<v8::Value>& args);
+  inline double value() const { return value_; }
+
+ private:
+  explicit MyObject(double value = 0);
+  ~MyObject();
+
+  static void New(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static v8::Global<v8::Function> constructor;
+  double value_;
+};
+
+}  // namespace demo
+
+#endif COPY
+The implementation of myobject.cc is similar to before:
+
+// myobject.cc
+#include <node.h>
+#include "myobject.h"
+
+namespace demo {
+
+using node::AddEnvironmentCleanupHook;
+using v8::Context;
+using v8::Function;
+using v8::FunctionCallbackInfo;
+using v8::FunctionTemplate;
+using v8::Global;
+using v8::Isolate;
+using v8::Local;
+using v8::Object;
+using v8::String;
+using v8::Value;
+
+// Warning! This is not thread-safe, this addon cannot be used for worker
+// threads.
+Global<Function> MyObject::constructor;
+
+MyObject::MyObject(double value) : value_(value) {
+}
+
+MyObject::~MyObject() {
+}
+
+void MyObject::Init(Isolate* isolate) {
+  // Prepare constructor template
+  Local<FunctionTemplate> tpl = FunctionTemplate::New(isolate, New);
+  tpl->SetClassName(String::NewFromUtf8(isolate, "MyObject").ToLocalChecked());
+  tpl->InstanceTemplate()->SetInternalFieldCount(1);
+
+  Local<Context> context = isolate->GetCurrentContext();
+  constructor.Reset(isolate, tpl->GetFunction(context).ToLocalChecked());
+
+  AddEnvironmentCleanupHook(isolate, [](void*) {
+    constructor.Reset();
+  }, nullptr);
+}
+
+void MyObject::New(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  Local<Context> context = isolate->GetCurrentContext();
+
+  if (args.IsConstructCall()) {
+    // Invoked as constructor: `new MyObject(...)`
+    double value = args[0]->IsUndefined() ?
+        0 : args[0]->NumberValue(context).FromMaybe(0);
+    MyObject* obj = new MyObject(value);
+    obj->Wrap(args.This());
+    args.GetReturnValue().Set(args.This());
+  } else {
+    // Invoked as plain function `MyObject(...)`, turn into construct call.
+    const int argc = 1;
+    Local<Value> argv[argc] = { args[0] };
+    Local<Function> cons = Local<Function>::New(isolate, constructor);
+    Local<Object> instance =
+        cons->NewInstance(context, argc, argv).ToLocalChecked();
+    args.GetReturnValue().Set(instance);
+  }
+}
+
+void MyObject::NewInstance(const FunctionCallbackInfo<Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+
+  const unsigned argc = 1;
+  Local<Value> argv[argc] = { args[0] };
+  Local<Function> cons = Local<Function>::New(isolate, constructor);
+  Local<Context> context = isolate->GetCurrentContext();
+  Local<Object> instance =
+      cons->NewInstance(context, argc, argv).ToLocalChecked();
+
+  args.GetReturnValue().Set(instance);
+}
+
+}  // namespace demo COPY
+Test it with:
+
+// test.js
+const addon = require('./build/Release/addon');
+
+const obj1 = addon.createObject(10);
+const obj2 = addon.createObject(20);
+const result = addon.add(obj1, obj2);
+
+console.log(result);
+// Prints: 30 
 // hello.cc using Node-API
 #include <node_api.h>
 
