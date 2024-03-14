@@ -1,4 +1,68 @@
+# Optional list of the audience identifiers for the server the token was presented to.
+# Audience-aware token authenticators (for example, OIDC token authenticators)
+# should verify the token was intended for at least one of the audiences in this list,
+# and return the intersection of this list and the valid audiences for the token in the response status.
+# This ensures the token is valid to authenticate to the server it was presented to.
+# If no audiences are provided, the token should be validated to authenticate to the Kubernetes API server.
+"audiences": ["https://myserver.example.com", "https://myserver.internal.example.com"]
+
+# API version to use when decoding the ExecCredentials resource. Required.
+#
+# The API version returned by the plugin MUST match the version listed here.
+#
+# To integrate with tools that support multiple versions (such as client.authentication.k8s.io/v1beta1),
+# set an environment variable, pass an argument to the tool that indicates which version the exec plugin expects,
+# or read the version from the ExecCredential object in the KUBERNETES_EXEC_INFO environment variable.
+apiVersion: "client.authentication.k8s.io/v1"
+
+# Environment variables to set when executing the plugin. Optional.
+env:
+- name: "FOO"
+  value: "bar"
+
+# Arguments to pass when executing the plugin. Optional.
+args:
+- "arg1"
+- "arg2"
+
+# Text shown to the user when the executable doesn't seem to be present. Optional.
+installHint: |
+  example-client-go-exec-plugin is required to authenticate
+  to the current cluster.  It can be installed:
+
+  On macOS: brew install example-client-go-exec-plugin
+
+  On Ubuntu: apt-get install example-client-go-exec-plugin
+
+  On Fedora: dnf install example-client-go-exec-plugin
+
+  ...        
+
+# Whether or not to provide cluster information, which could potentially contain
+# very large CA data, to this exec plugin as a part of the KUBERNETES_EXEC_INFO
+# environment variable.
+provideClusterInfo: true
+
+# The contract between the exec plugin and the standard input I/O stream. If the
+# contract cannot be satisfied, this plugin will not be run and an error will be
+# returned. Valid values are "Never" (this exec plugin never uses standard input),
+# "IfAvailable" (this exec plugin wants to use standard input if it is available),
+# or "Always" (this exec plugin requires standard input to function). Required.
+interactiveMode: Never
+
+File.fnmatch('cat',       'cat')        #=> true  # match entire string
+
 // +listType=map
+
+struct block_device     *s_bdev;
+struct list_head        s_mounts;       /* vfsmount(s) of this one */
+struct quota_mount_options s_dquot;     /* Diskquota specific options */
+/* The next field is used by knfsd when converting a (inode number based)
+ * file handle into a dentry. As it builds a path in the dcache tree from
+ * the bottom up, there may for a time be a subpath of dentrys which is not * connected to the main tree.  This semaphore ensure that there is only ever * one such free path per filesystem.  Note that unconnected files (or other * non-directories) are allowed, but not unconnected diretories. */ struct semaphore s_nfsd_free_path_sem; };
+name: mmosley user: auth-provider: config: client-id: kubernetes client-secret: 1db158f6-177d-4d9c-8a8b-d36869918ec5 id-token: eyJraWQiOiJDTj1vaWRjaWRwLnRyZW1vbG8ubGFuLCBPVT1EZW1vLCBPPVRybWVvbG8gU2VjdXJpdHksIEw9QXJsaW5ndG9uLCBTVD1WaXJnaW5pYSwgQz1VUy1DTj1rdWJlLWNhLTEyMDIxNDc5MjEwMzYwNzMyMTUyIiwiYWxnIjoiUlMyNTYifQ.eyJpc3MiOiJodHRwczovL29pZGNpZHAudHJlbW9sby5sYW46ODQ0My9hdXRoL2lkcC9PaWRjSWRQIiwiYXVkIjoia3ViZXJuZXRlcyIsImV4cCI6MTQ4MzU0OTUxMSwianRpIjoiMm96US15TXdFcHV4WDlHZUhQdy1hZyIsImlhdCI6MTQ4MzU0OTQ1MSwibmJmIjoxNDgzNTQ5MzMxLCJzdWIiOiI0YWViMzdiYS1iNjQ1LTQ4ZmQtYWIzMC0xYTAxZWU0MWUyMTgifQ.w6p4J_6qQ1HzTG9nrEOrubxIMb9K5hzcMPxc9IxPx2K4xO9l-oFiUw93daH3m5pluP6K7eOE6txBuRVfEcpJSwlelsOsW8gb8VJcnzMS9EnZpeA0tW_p-mnkFc3VcfyXuhe5R3G7aa5d8uHv70yJ9Y3-UhjiN9EhpMdfPAoEB9fYKKkJRzF7utTTIPGrSaSU6d2pcpfYKaxIwePzEkT4DfcQthoZdy9ucNvvLoi1DIC-UocFD8HLs8LYKEqSxQvOcvnThbObJ9af71EwmuE21fO5KzMW20KtAeget1gnldOosPtz1G5EwvaQ401-RPQzPGMVBld0_zMCAwZttJ4knw idp-certificate-authority: /root/ca.pem idp-issuer-url: https://oidcidp.tremolo.lan:8443/auth/idp/OidcIdP refresh-token: q1bKLFOyUiosTfawzA93TzZIDzH2TNa2SMm0zEiPKTUwME6BkEo6Sql5yUWVBSWpKUGphaWpxSVAfekBOZbBhaEW+VlFUeVRGcluyVF5JT4+haZmPsluFoFu5XkpXk5BXqkubectl --token=eyJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL21sYi50cmVtb2xvLmxhbjo4MDQzL2F1dGgvaWRwL29pZGMiLCJhdWQiOiJrdWJlcm5ldGVzIiwiZXhwIjoxNDc0NTk2NjY5LCJqdGkiOiI2RDUzNXoxUEpFNjJOR3QxaWVyYm9RIiwiaWF0IjoxNDc0NTk2MzY5LCJuYmYiOjE0NzQ1OTYyNDksInN1YiI6Im13aW5kdSIsInVzZXJfcm9sZSI6WyJ1c2VycyIsIm5ldy1uYW1lc3BhY2Utdmlld2VyIl0sImVtYWlsIjoibXdpbmR1QG5vbW9yZWplZGkuY29tIn0.f2As579n9VNoaKzoF-dOQGmXkFKf1FMyNV0-va_B63jn-_n9LGSCca_6IVMP8pO-Zb4KvRqGyTP0r3HkHxYy5c81AnIh8ijarruczl-TK_yF5akjSTHFZD-0gRzlevBDiH8Q79NAr-ky0P4iIXS8lY9Vnjch5MF74Zx0c3alKJHJUnnpjIACByfF2SCaYzbWFMUNat-K1PaUk5-ujMBG7yYnr95xD-63n8CO8teGUAAEMx6zRjzfhnhbzX-ajwZLGwGUBT4WqjMs70-6a7_8gZmLZb2az1cZynkFRj2BaCkVT3A2RrjeEwZEtGXlMqKJ1_I2ulrOVsYx01_yD35-rw get nodes Webhook Token Authentication
+
+
 // +listMapKey=type
 // +patchStrategy=merge
 // +patchMergeKey=type
